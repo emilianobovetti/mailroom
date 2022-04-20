@@ -1,8 +1,10 @@
 defmodule Mailroom.IMAP do
-  require Logger
   use GenServer
 
   import Mailroom.IMAP.Utils
+
+  require Logger
+
   alias Mailroom.IMAP.{Envelope, BodyStructure}
 
   defmodule State do
@@ -37,7 +39,7 @@ defmodule Mailroom.IMAP do
       {:ok, client} = #{inspect(__MODULE__)}.connect("imap.server", "username", "password")
       client
       |> #{inspect(__MODULE__)}.list
-      |> Enum.each(fn(mail)) ->
+      |> Enum.each(fn(mail) ->
         message =
           client
           |> #{inspect(__MODULE__)}.retrieve(mail)
@@ -109,7 +111,7 @@ defmodule Mailroom.IMAP do
     do: GenServer.call(pid, {:select, mailbox_name}) && pid
 
   def examine(pid, mailbox_name),
-    do: GenServer.call(pid, {:examine, mailbox_name})
+    do: GenServer.call(pid, {:examine, mailbox_name}) && pid
 
   def list(pid, reference \\ "", mailbox_name \\ "*"),
     do: GenServer.call(pid, {:list, reference, mailbox_name})
@@ -143,6 +145,14 @@ defmodule Mailroom.IMAP do
     end
   end
 
+  def uid_fetch(pid, number_or_range, items_list, opts \\ []) do
+    GenServer.call(
+      pid,
+      {:uid_fetch, number_or_range, items_list},
+      Keyword.get(opts, :timeout, 300_000)
+    )
+  end
+
   def search(pid, query, items_list \\ nil, func \\ nil) do
     {:ok, list} = GenServer.call(pid, {:search, query}, 60_000)
 
@@ -158,6 +168,10 @@ defmodule Mailroom.IMAP do
     else
       {:ok, list}
     end
+  end
+
+  def uid_search(pid, query) do
+    GenServer.call(pid, {:uid_search, query}, 60_000)
   end
 
   def each(pid, items_list \\ [:envelope], func) do
@@ -307,8 +321,19 @@ defmodule Mailroom.IMAP do
      })}
   end
 
+  def handle_call({:uid_fetch, sequence, items}, from, state) do
+    {:noreply,
+     send_command(from, ["UID FETCH", " ", to_sequence(sequence), " ", items_to_list(items)], %{
+       state
+       | temp: []
+     })}
+  end
+
   def handle_call({:search, query}, from, state),
     do: {:noreply, send_command(from, ["SEARCH", " ", query], %{state | temp: []})}
+
+  def handle_call({:uid_search, query}, from, state),
+    do: {:noreply, send_command(from, ["UID SEARCH", " ", query], %{state | temp: []})}
 
   [remove_flags: "-FLAGS", add_flags: "+FLAGS", set_flags: "FLAGS"]
   |> Enum.each(fn {func_name, command} ->
@@ -394,12 +419,12 @@ defmodule Mailroom.IMAP do
   end
 
   def handle_info({:ssl, _socket, msg}, state) do
-    if state.debug, do: IO.write(["> [ssl] ", msg])
+    if state.debug, do: Logger.info(["> [ssl] ", msg])
     handle_response(msg, state)
   end
 
   def handle_info({:tcp, _socket, msg}, state) do
-    if state.debug, do: IO.write(["> [tcp] ", msg])
+    if state.debug, do: Logger.info(["> [tcp] ", msg])
     handle_response(msg, state)
   end
 
@@ -410,7 +435,7 @@ defmodule Mailroom.IMAP do
 
   def handle_info({:ssl_closed, _}, state) do
     Logger.warn("SSL closed")
-    {:stop, :ssl_closed, state}
+    {:stop, {:shutdown, :ssl_closed}, state}
   end
 
   defp cancel_idle(socket, timer) do
@@ -704,7 +729,23 @@ defmodule Mailroom.IMAP do
 
   defp process_command_response(
          cmd_tag,
+         %{command: "UID FETCH", caller: caller},
+         _msg,
+         %{temp: temp} = state
+       ),
+       do: send_reply(caller, Enum.reverse(temp), remove_command_from_state(state, cmd_tag))
+
+  defp process_command_response(
+         cmd_tag,
          %{command: "SEARCH", caller: caller},
+         _msg,
+         %{temp: temp} = state
+       ),
+       do: send_reply(caller, temp, remove_command_from_state(state, cmd_tag))
+
+  defp process_command_response(
+         cmd_tag,
+         %{command: "UID SEARCH", caller: caller},
          _msg,
          %{temp: temp} = state
        ),
@@ -815,11 +856,11 @@ defmodule Mailroom.IMAP do
   defp get_next_line(%{debug: debug}) do
     receive do
       {:ssl, _socket, data} ->
-        if debug, do: IO.write(["> [ssl] ", data])
+        if debug, do: Logger.info(["> [ssl] ", data])
         data
 
       {:tcp, _socket, data} ->
-        if debug, do: IO.write(["> [tcp] ", data])
+        if debug, do: Logger.info(["> [tcp] ", data])
         data
     end
   end
