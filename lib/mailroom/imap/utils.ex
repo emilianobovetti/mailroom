@@ -87,8 +87,8 @@ defmodule Mailroom.IMAP.Utils do
   defp do_parse_string({"\r\n", rest}, false, acc),
     do: {IO.iodata_to_binary(Enum.reverse(acc)), <<"\r\n", rest::binary>>}
 
-  defp do_parse_string({nil, rest}, false, acc),
-    do: {IO.iodata_to_binary(Enum.reverse(acc)), <<" ", rest::binary>>}
+  defp do_parse_string(nil, false, acc),
+    do: {IO.iodata_to_binary(Enum.reverse(acc)), " "}
 
   defp do_parse_string({grapheme, rest}, inquotes, acc),
     do: do_parse_string(String.next_grapheme(rest), inquotes, [grapheme | acc])
