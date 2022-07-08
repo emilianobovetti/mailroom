@@ -270,18 +270,20 @@ defmodule Mailroom.IMAP do
     [(start + 1)..length]
   end
 
+  @type change_flags_opts :: [silent: true, uid: true]
+
   @spec remove_flags(srv, non_neg_integer | Range.t(), item_or_items) :: srv
-  @spec remove_flags(srv, non_neg_integer | Range.t(), item_or_items, silent: true) :: srv
+  @spec remove_flags(srv, non_neg_integer | Range.t(), item_or_items, change_flags_opts) :: srv
   def remove_flags(pid, number_or_range, flags, opts \\ []),
     do: GenServer.call(pid, {:remove_flags, number_or_range, flags, opts}) && pid
 
   @spec add_flags(srv, non_neg_integer | Range.t(), item_or_items) :: srv
-  @spec add_flags(srv, non_neg_integer | Range.t(), item_or_items, silent: true) :: srv
+  @spec add_flags(srv, non_neg_integer | Range.t(), item_or_items, change_flags_opts) :: srv
   def add_flags(pid, number_or_range, flags, opts \\ []),
     do: GenServer.call(pid, {:add_flags, number_or_range, flags, opts}) && pid
 
   @spec set_flags(srv, non_neg_integer | Range.t(), item_or_items) :: srv
-  @spec set_flags(srv, non_neg_integer | Range.t(), item_or_items, silent: true) :: srv
+  @spec set_flags(srv, non_neg_integer | Range.t(), item_or_items, change_flags_opts) :: srv
   def set_flags(pid, number_or_range, flags, opts \\ []),
     do: GenServer.call(pid, {:set_flags, number_or_range, flags, opts}) && pid
 
